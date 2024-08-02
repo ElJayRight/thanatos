@@ -58,7 +58,7 @@ fn http_post(url: &str, body: &str) -> Result<String, Box<dyn Error>> {
     let mut client_builder = Client::builder();
     if let Some(proxy_url) = profilevars::proxy_settings() {
         client_builder = client_builder.proxy(Proxy::all(&proxy_url)?);
-        client_builder = client_builder.danger_accept_invalid_certs(true);
+//        client_builder = client_builder.danger_accept_invalid_certs(true);
     }
 
 
